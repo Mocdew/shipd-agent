@@ -128,7 +128,7 @@ class ValidateNodeCoverageTests(unittest.TestCase):
         self.assertEqual(out["decision"], "request_changes")
 
     def test_recorded_pass_cannot_override_unverified_sequence_length(self) -> None:
-        state = self._state(_review(), {"agent_runs": "Vega: 1/4 pass; Nova: 0/4 pass; Orion: 0/4 pass"})
+        state = self._state(_review(), {"agent_runs": "Orion: 1/4 pass; Vega: 0/4 pass; Nova: 0/4 pass"})
         state["agent_runs_data"] = {"available": True, "raw_text": state["scrape_context"]["agent_runs"]}
         state.update(g._run_agent_runs_analysis(state))
         state["review_evidence"] = {"phases": {

@@ -27,9 +27,8 @@ from review.rubric_defaults import (
     MAX_PROMPT_WORDS,
     MAX_SOLVE_RATE,
     MIN_UNHINTED_RUNS,
-    NOVA_MIN_AVG_SEQUENCE_TOKENS,
-    NOVA_PAYOUT_SEQUENCE_CAP,
     OLYMPUS_MIN_EFFECTIVE_LOC,
+    ORION_MIN_SOLVING_SEQUENCE_TOKENS,
 )
 
 # Retired Anthropic IDs still seen in older .env files → current API model IDs.
@@ -101,8 +100,7 @@ class ReviewConfig:
     review_max_total_tokens: int = 200_000
     min_unhinted_runs: int = MIN_UNHINTED_RUNS
     max_solve_rate: float = MAX_SOLVE_RATE
-    nova_min_sequence_tokens: int = NOVA_MIN_AVG_SEQUENCE_TOKENS
-    nova_payout_sequence_cap: int = NOVA_PAYOUT_SEQUENCE_CAP
+    orion_min_sequence_tokens: int = ORION_MIN_SOLVING_SEQUENCE_TOKENS
     max_cheat_rate: float = MAX_CHEAT_RATE
     flakiness_repeats: int = FLAKINESS_REPEATS
     expected_agent_models: dict[str, str] = field(
@@ -329,16 +327,10 @@ def get_review_config(*, dry_run_override: bool | None = None) -> ReviewConfig:
         max_solve_rate=float(
             os.getenv("REVIEW_MAX_SOLVE_RATE", str(MAX_SOLVE_RATE))
         ),
-        nova_min_sequence_tokens=int(
+        orion_min_sequence_tokens=int(
             os.getenv(
-                "REVIEW_NOVA_MIN_SEQUENCE_TOKENS",
-                str(NOVA_MIN_AVG_SEQUENCE_TOKENS),
-            )
-        ),
-        nova_payout_sequence_cap=int(
-            os.getenv(
-                "REVIEW_NOVA_PAYOUT_SEQUENCE_CAP",
-                str(NOVA_PAYOUT_SEQUENCE_CAP),
+                "REVIEW_ORION_MIN_SEQUENCE_TOKENS",
+                str(ORION_MIN_SOLVING_SEQUENCE_TOKENS),
             )
         ),
         max_cheat_rate=float(

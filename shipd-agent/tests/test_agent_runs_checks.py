@@ -1,7 +1,8 @@
 # Unit tests for agent run platform checks.
 #
-# Phase 5 bar: at least 4 unhinted runs per model, one model only at <= 25%,
-# and (Olympus) Nova average sequence length above 400K tokens.
+# Phase 5 bar: at least 4 unhinted runs per model. Olympus: Orion solves in
+# 1..25% of runs, Vega at most 25%, Nova never, and Orion's solving runs
+# average at least 256K tokens of sequence length. Mars: one model only, <= 25%.
 
 from __future__ import annotations
 
@@ -29,7 +30,7 @@ Nova: 1/4 pass
 Vega: 0/4 pass
 Orion: 0/4 pass
 Median files: 5, messages: 146.5, LOC: 420
-Nova average sequence length: 450000
+Orion solving runs average sequence length: 300000
 """.strip()
 
 TWO_PASSES_ONE_AGENT_PANEL = """
@@ -87,47 +88,103 @@ Median files: 5, messages: 146.5, LOC: 420
 
 LOW_SCOPE_PANEL = """
 Agent Runs
-Nova: 1/4 pass
+Orion: 1/4 pass
 Vega: 0/4 pass
-Orion: 0/4 pass
+Nova: 0/4 pass
 Median files: 2, messages: 40, LOC: 80
-Nova average sequence length: 300000
+Orion solving runs average sequence length: 200000
 """.strip()
 
-VEGA_SOLVES_PANEL = """
+ORION_SOLVES_PANEL = """
+Agent Runs
+Orion: 1/4 pass
+Vega: 0/4 pass
+Nova: 0/4 pass
+Orion solving runs average sequence length: 300000
+""".strip()
+
+ORION_AND_VEGA_SOLVE_PANEL = """
+Agent Runs
+Orion: 1/4 pass
+Vega: 1/4 pass
+Nova: 0/4 pass
+Orion solving runs average sequence length: 300000
+""".strip()
+
+ORION_TWO_OF_EIGHT_PANEL = """
+Agent Runs
+Orion: 2/8 pass
+Vega: 0/4 pass
+Nova: 0/4 pass
+Orion solving runs average sequence length: 300000
+""".strip()
+
+ORION_ONE_OF_FIVE_PANEL = """
+Agent Runs
+Orion: 1/5 pass
+Vega: 1/4 pass
+Nova: 0/4 pass
+Orion solving runs average sequence length: 256000
+""".strip()
+
+VEGA_ONLY_PANEL = """
 Agent Runs
 Vega: 1/4 pass
 Nova: 0/4 pass
 Orion: 0/4 pass
-Nova average sequence length: 450000
 """.strip()
 
-VEGA_TWO_OF_EIGHT_PANEL = """
+NOVA_SOLVES_PANEL = """
 Agent Runs
-Vega: 2/8 pass
-Nova: 0/4 pass
-Orion: 0/4 pass
-Nova average sequence length: 450000
+Orion: 1/4 pass
+Vega: 0/4 pass
+Nova: 1/4 pass
+Orion solving runs average sequence length: 300000
 """.strip()
 
-VEGA_ONE_OF_FIVE_PANEL = """
+ORION_HALF_PANEL = """
 Agent Runs
-Vega: 1/5 pass
+Orion: 2/4 pass
+Vega: 0/4 pass
 Nova: 0/4 pass
-Orion: 0/4 pass
-Nova average sequence length: 410000
+Orion solving runs average sequence length: 300000
+""".strip()
+
+VEGA_HALF_PANEL = """
+Agent Runs
+Orion: 1/4 pass
+Vega: 2/4 pass
+Nova: 0/4 pass
+Orion solving runs average sequence length: 300000
+""".strip()
+
+# Per-run rows: only the unhinted PASS rows feed the solving-run average.
+ORION_PER_RUN_PANEL = """
+Agent Runs
+Orion
+Run 1: PASS
+Sequence length: 280000
+Run 2: FAIL
+Sequence length: 100000
+Run 3: FAIL
+Sequence length: 120000
+Run 4: FAIL
+Sequence length: 90000
+Run 5: PASS hinted
+Sequence length: 900000
+Vega: 0/4 pass
+Nova: 0/4 pass
 """.strip()
 
 HINTED_PASS_EXCLUDED_PANEL = """
 Agent Runs
-Vega run 1: PASS hinted
-Vega run 2: FAIL
-Vega run 3: FAIL
-Vega run 4: FAIL
-Vega run 5: FAIL
+Orion run 1: PASS hinted
+Orion run 2: FAIL
+Orion run 3: FAIL
+Orion run 4: FAIL
+Orion run 5: FAIL
+Vega: 0/4 pass
 Nova: 0/4 pass
-Orion: 0/4 pass
-Nova average sequence length: 450000
 """.strip()
 
 
@@ -222,35 +279,72 @@ Agents failed because the edge case was unstated.
 
 
 class EvaluateAgentRunsPhase5Tests(unittest.TestCase):
-    def test_vega_within_25_percent_passes_when_nova_bar_is_met(self) -> None:
-        phase, findings = evaluate_agent_runs_phase5(_data(VEGA_SOLVES_PANEL), quest="olympus")
-        self.assertEqual(phase.status, "PASS")
+    def _olympus(self, panel: str):
+        return evaluate_agent_runs_phase5(_data(panel), quest="olympus")
+
+    def test_orion_within_25_percent_passes(self) -> None:
+        phase, findings = self._olympus(ORION_SOLVES_PANEL)
+        self.assertEqual(phase.status, "PASS", phase.summary)
         self.assertEqual(findings, [])
-        self.assertIn("Vega 1/4", phase.summary)
+        self.assertIn("Orion 1/4", phase.summary)
+        self.assertIn("Orion solving runs average 300,000", phase.summary)
+
+    def test_orion_and_vega_may_both_solve(self) -> None:
+        phase, findings = self._olympus(ORION_AND_VEGA_SOLVE_PANEL)
+        self.assertEqual(phase.status, "PASS", phase.summary)
+        self.assertEqual(findings, [])
 
     def test_two_of_eight_is_25_percent_and_passes(self) -> None:
-        phase, findings = evaluate_agent_runs_phase5(
-            _data(VEGA_TWO_OF_EIGHT_PANEL), quest="olympus"
-        )
+        phase, findings = self._olympus(ORION_TWO_OF_EIGHT_PANEL)
         self.assertEqual(phase.status, "PASS", phase.summary)
         self.assertEqual(findings, [])
 
-    def test_one_of_five_is_allowed(self) -> None:
-        phase, findings = evaluate_agent_runs_phase5(
-            _data(VEGA_ONE_OF_FIVE_PANEL), quest="olympus"
-        )
+    def test_exactly_256k_and_one_of_five_pass(self) -> None:
+        phase, findings = self._olympus(ORION_ONE_OF_FIVE_PANEL)
         self.assertEqual(phase.status, "PASS", phase.summary)
         self.assertEqual(findings, [])
 
-    def test_nova_only_solve_passes_with_a_warning(self) -> None:
-        phase, findings = evaluate_agent_runs_phase5(_data(ONE_PASS_PANEL), quest="olympus")
-        self.assertEqual(phase.status, "PASS", phase.summary)
-        self.assertEqual([f.severity for f in findings], ["MINOR"])
-        self.assertIn("Nova-only", findings[0].finding)
+    def test_vega_only_solve_fails_because_orion_never_solved(self) -> None:
+        phase, findings = self._olympus(VEGA_ONLY_PANEL)
+        self.assertEqual(phase.status, "FAIL")
+        self.assertEqual([f.finding for f in findings], ["Orion never solved the task"])
+        self.assertEqual(findings[0].severity, "MAJOR")
 
-    def test_two_passes_from_one_agent_fails(self) -> None:
+    def test_any_nova_solve_fails(self) -> None:
+        phase, findings = self._olympus(NOVA_SOLVES_PANEL)
+        self.assertEqual(phase.status, "FAIL")
+        self.assertEqual([f.finding for f in findings], ["Nova solved the task"])
+        self.assertIn("1/4 = 25%", findings[0].evidence)
+
+    def test_orion_above_25_percent_fails(self) -> None:
+        phase, findings = self._olympus(ORION_HALF_PANEL)
+        self.assertEqual(phase.status, "FAIL")
+        self.assertEqual([f.finding for f in findings], ["Orion solve rate above 25%"])
+        self.assertIn("50%", findings[0].evidence)
+
+    def test_vega_above_25_percent_fails(self) -> None:
+        phase, findings = self._olympus(VEGA_HALF_PANEL)
+        self.assertEqual(phase.status, "FAIL")
+        self.assertEqual([f.finding for f in findings], ["Vega solve rate above 25%"])
+
+    def test_per_run_rows_average_only_unhinted_orion_passes(self) -> None:
+        metrics = parse_agent_run_metrics(ORION_PER_RUN_PANEL)
+        self.assertEqual(metrics["per_agent"]["Orion"], {"runs": 4, "passes": 1})
+        self.assertEqual(metrics["orion_solving_sequence_average"], 280000)
+        phase, findings = self._olympus(ORION_PER_RUN_PANEL)
+        self.assertEqual(phase.status, "PASS", phase.summary)
+        self.assertEqual(findings, [])
+
+    def test_long_orion_solves_label_is_read(self) -> None:
+        panel = ORION_SOLVES_PANEL.replace(
+            "Orion solving runs average sequence length: 300000",
+            "Long Orion solves: 300K sequence length",
+        )
+        self.assertEqual(parse_agent_run_metrics(panel)["orion_solving_sequence_average"], 300000)
+
+    def test_mars_two_passes_from_one_agent_fails(self) -> None:
         phase, findings = evaluate_agent_runs_phase5(
-            _data(TWO_PASSES_ONE_AGENT_PANEL), quest="olympus"
+            _data(TWO_PASSES_ONE_AGENT_PANEL), quest="mars"
         )
         self.assertEqual(phase.status, "FAIL")
         self.assertEqual([f.finding for f in findings], ["Solve rate above 25%"])
@@ -305,12 +399,22 @@ class EvaluateAgentRunsPhase5Tests(unittest.TestCase):
         self.assertEqual(findings, [])
         self.assertIn("not a pass", phase.summary)
 
+    def test_mars_one_model_solve_passes(self) -> None:
+        phase, findings = evaluate_agent_runs_phase5(_data(VEGA_ONLY_PANEL), quest="mars")
+        self.assertEqual(phase.status, "PASS", phase.summary)
+        self.assertEqual(findings, [])
+
     def test_sequence_length_replaces_olympus_medians(self) -> None:
         phase, findings = evaluate_agent_runs_phase5(_data(LOW_SCOPE_PANEL), quest="olympus")
         self.assertEqual(phase.status, "FAIL")
         self.assertTrue(any("sequence length" in f.finding for f in findings))
         self.assertFalse(any("file count" in f.finding for f in findings))
-        mars, mars_findings = evaluate_agent_runs_phase5(_data(LOW_SCOPE_PANEL), quest="mars")
+        mars, mars_findings = evaluate_agent_runs_phase5(
+            _data(LOW_SCOPE_PANEL.replace("Orion: 1/4", "Orion: 0/4").replace(
+                "Vega: 0/4", "Vega: 1/4"
+            )),
+            quest="mars",
+        )
         self.assertEqual(mars.status, "FAIL")
         self.assertTrue(any("Median agent LOC" in f.finding for f in mars_findings))
 
@@ -320,45 +424,66 @@ class EvaluateAgentRunsPhase5Tests(unittest.TestCase):
         self.assertEqual(findings, [])
 
     def test_unlabeled_sequence_length_does_not_pass(self) -> None:
-        panel = VEGA_SOLVES_PANEL.replace(
-            "Nova average sequence length: 450000",
-            "Nova tokens: 500000",
+        panel = ORION_SOLVES_PANEL.replace(
+            "Orion solving runs average sequence length: 300000",
+            "Orion tokens: 500000",
         )
         phase, findings = evaluate_agent_runs_phase5(_data(panel), quest="olympus")
         self.assertEqual(phase.status, "SKIP")
         self.assertIn("Long horizon unverified", phase.summary)
         self.assertEqual(findings, [])
 
-    def test_sequence_length_at_the_floor_fails(self) -> None:
-        panel = VEGA_SOLVES_PANEL.replace("450000", "400000")
+    def test_orion_all_runs_average_is_not_the_solving_average(self) -> None:
+        panel = ORION_SOLVES_PANEL.replace(
+            "Orion solving runs average sequence length: 300000",
+            "Orion average sequence length: 300000",
+        )
+        phase, findings = evaluate_agent_runs_phase5(_data(panel), quest="olympus")
+        self.assertEqual(phase.status, "SKIP")
+        self.assertIn("not the solving-run average", phase.summary)
+        self.assertEqual(findings, [])
+
+    def test_nova_sequence_length_no_longer_counts(self) -> None:
+        panel = ORION_SOLVES_PANEL.replace(
+            "Orion solving runs average sequence length: 300000",
+            "Nova average sequence length: 450000",
+        )
+        phase, _ = evaluate_agent_runs_phase5(_data(panel), quest="olympus")
+        self.assertEqual(phase.status, "SKIP")
+
+    def test_sequence_length_below_256k_fails(self) -> None:
+        panel = ORION_SOLVES_PANEL.replace("300000", "255999")
         phase, findings = evaluate_agent_runs_phase5(_data(panel), quest="olympus")
         self.assertEqual(phase.status, "FAIL")
-        self.assertIn("Nova sequence length below the long-horizon bar", [f.finding for f in findings])
+        self.assertIn(
+            "Orion solving-run sequence length below the long-horizon bar",
+            [f.finding for f in findings],
+        )
 
     def test_cheat_rate_at_20_percent_fails(self) -> None:
         phase, findings = evaluate_agent_runs_phase5(
-            _data(VEGA_SOLVES_PANEL + "\nCheat rate: 20%"), quest="olympus"
+            _data(ORION_SOLVES_PANEL + "\nCheat rate: 20%"), quest="olympus"
         )
         self.assertEqual(phase.status, "FAIL")
         self.assertIn("Cheat rate is not below 20%", [f.finding for f in findings])
 
     def test_unfair_and_blocker_flags_fail_and_clear_flags_do_not(self) -> None:
         unfair, findings = evaluate_agent_runs_phase5(
-            _data(VEGA_SOLVES_PANEL + "\nVega run 1 flagged the task unfair"),
+            _data(ORION_SOLVES_PANEL + "\nVega run 1 flagged the task unfair"),
             quest="olympus",
         )
         self.assertEqual(unfair.status, "FAIL")
         self.assertIn("Task flagged unfair or broken", [f.finding for f in findings])
 
         blocked, findings = evaluate_agent_runs_phase5(
-            _data(VEGA_SOLVES_PANEL + "\nNova run 2 blocked by the environment"),
+            _data(ORION_SOLVES_PANEL + "\nNova run 2 blocked by the environment"),
             quest="olympus",
         )
         self.assertEqual(blocked.status, "FAIL")
         self.assertIn("Run blocked by environment or verifier", [f.finding for f in findings])
 
         clear, findings = evaluate_agent_runs_phase5(
-            _data(VEGA_SOLVES_PANEL + "\nCheat rate: 0%\nno unfair runs\nno environment blocker"),
+            _data(ORION_SOLVES_PANEL + "\nCheat rate: 0%\nno unfair runs\nno environment blocker"),
             quest="olympus",
         )
         self.assertEqual(clear.status, "PASS", clear.summary)
@@ -366,7 +491,7 @@ class EvaluateAgentRunsPhase5Tests(unittest.TestCase):
         self.assertNotIn("Not on the page", clear.summary)
 
     def test_missing_integrity_flags_stay_a_pass_and_are_named(self) -> None:
-        phase, findings = evaluate_agent_runs_phase5(_data(VEGA_SOLVES_PANEL), quest="olympus")
+        phase, findings = evaluate_agent_runs_phase5(_data(ORION_SOLVES_PANEL), quest="olympus")
         self.assertEqual(phase.status, "PASS")
         self.assertEqual(findings, [])
         self.assertIn("Not on the page: cheat rate, fair-task flags, environment or verifier blockers.", phase.summary)

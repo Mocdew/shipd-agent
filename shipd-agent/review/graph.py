@@ -226,8 +226,7 @@ def _agent_run_kwargs(state: ReviewState) -> dict[str, Any]:
     for name in (
         "min_unhinted_runs",
         "max_solve_rate",
-        "nova_min_sequence_tokens",
-        "nova_payout_sequence_cap",
+        "orion_min_sequence_tokens",
         "max_cheat_rate",
     ):
         value = getattr(config, name, None)

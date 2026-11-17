@@ -104,8 +104,8 @@ The code includes the criteria reported in community assessment feedback:
 | **Prompt length** | Flags explicit task-prompt files over **1,000 words** |
 | **Too Many Requirements** | Reads the platform flag and estimates independent requirements locally |
 | **Agent runs** | At least **4 finished unhinted runs** each for Nova, Vega, and Orion. More is allowed. Hinted runs do not count |
-| **Passing runs** | **One model only**, above 0% and at most **25%**. The other two stay at 0%. A Nova-only solve is a warning |
-| **Long horizon** | Olympus: Nova average **sequence length above 400,000** tokens. There is no solution-LOC floor |
+| **Passing runs** | Olympus: **Orion** solves in at least one run and at most **25%**; **Vega** at most **25%**; **Nova** never. Mars: one model only, above 0% and at most 25% |
+| **Long horizon** | Olympus: Orion's **solving runs** average at least **256,000 tokens of sequence length**. There is no solution-LOC floor |
 | **Auto Review (prediction)** | Last stage: one model call reads the whole draft review and flags places where the prompt, tests, solution, and runs disagree. A concrete MAJOR blocks approve. Labeled a prediction, not Shipd's verdict |
 
 The requirement-count threshold defaults to 10 and is a **local heuristic**, not a published Shipd threshold. Existing run results are read without clicking evaluation controls. The agent does not launch Nova, Vega, or Orion runs.

@@ -125,12 +125,15 @@ MIN_UNHINTED_RUNS: Final[int] = 4
 # Older name. It is a minimum, not an exact count.
 RUNS_PER_AGENT_TYPE: Final[int] = MIN_UNHINTED_RUNS
 REQUIRED_AGENT_RUNS: Final[int] = MIN_UNHINTED_RUNS * len(AGENT_TYPES)
-# One model solves the task at a rate above 0 and at most this fraction.
+# Highest unhinted solve rate allowed for any model that solves the task.
 MAX_SOLVE_RATE: Final[float] = 0.25
-# Nova's average sequence length (largest request plus compacted or trimmed tokens).
-NOVA_MIN_AVG_SEQUENCE_TOKENS: Final[int] = 400_000
-# Scope share of the reward keeps rising through this average. Not a fail line.
-NOVA_PAYOUT_SEQUENCE_CAP: Final[int] = 500_000
+# Olympus solve bar: Orion must solve it (at least once, at most MAX_SOLVE_RATE),
+# Vega may solve it (at most MAX_SOLVE_RATE), and Nova must stay at 0%.
+OLYMPUS_REQUIRED_SOLVER: Final[str] = "Orion"
+OLYMPUS_NEVER_SOLVER: Final[str] = "Nova"
+# Olympus long horizon: Orion's solving runs average at least this sequence
+# length (largest request plus tokens the harness compacted or trimmed).
+ORION_MIN_SOLVING_SEQUENCE_TOKENS: Final[int] = 256_000
 MAX_CHEAT_RATE: Final[float] = 0.20
 # Verify Flakiness: clean repo, then the test patch. 0 disables the extra runs.
 FLAKINESS_REPEATS: Final[int] = 6
@@ -180,14 +183,14 @@ LOC_THRESHOLDS_PROMPT: Final[str] = (
 
 AGENT_RUN_THRESHOLDS_PROMPT: Final[str] = (
     "Agent run platform bars: {agent_types} need at least {runs_per_agent} finished "
-    "unhinted runs each. Hinted runs never count. Exactly one model solves the task, "
-    "at a rate above 0% and at most 25%; the other models stay at 0%. "
-    "A Nova-only solve is a warning, not a failure, until Shipd settles a docs conflict. "
-    "Olympus long horizon: Nova average sequence length above {nova_min_sequence} tokens "
-    "(largest request plus tokens the harness compacted or trimmed). "
-    "Averages above that raise the scope share of the reward through {nova_payout_cap}. "
-    "Mars: median successful runs ≥ {mars_median_loc} LOC. "
-    "Cheat rate below {max_cheat_pct:.0f}% across unhinted runs. "
+    "unhinted runs each. Hinted runs never count. "
+    "Olympus: Orion solves it in at least one run and at most 25% of runs; "
+    "Vega solves it in at most 25% of runs; Nova stays at 0%. "
+    "Olympus long horizon: Orion's solving runs average at least {orion_min_sequence} "
+    "tokens of sequence length (largest request plus tokens the harness compacted or trimmed). "
+    "Mars: exactly one model solves the task, above 0% and at most 25%; "
+    "median successful runs ≥ {mars_median_loc} LOC. "
+    "Cheat rate below {max_cheat_pct:.0f}% across all agents' unhinted runs. "
     "No run flagged unfair or blocked by the environment or verifier. "
     "A missing field is unverified, not a pass."
 )

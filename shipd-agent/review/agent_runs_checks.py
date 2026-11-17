@@ -11,8 +11,9 @@ from review.rubric_defaults import (
     MAX_CHEAT_RATE,
     MAX_SOLVE_RATE,
     MIN_UNHINTED_RUNS,
-    NOVA_MIN_AVG_SEQUENCE_TOKENS,
-    NOVA_PAYOUT_SEQUENCE_CAP,
+    OLYMPUS_NEVER_SOLVER,
+    OLYMPUS_REQUIRED_SOLVER,
+    ORION_MIN_SOLVING_SEQUENCE_TOKENS,
 )
 from review.schemas import Finding, PhaseResult
 
@@ -215,7 +216,8 @@ def parse_agent_run_metrics(raw_text: str) -> dict[str, Any]:
         per_agent = notes["per_agent"]
     metrics["per_agent"] = per_agent
     metrics["hints_marked"] = notes["hints_marked"]
-    metrics["nova_sequence_average"] = notes["nova_sequence_average"]
+    metrics["orion_solving_sequence_average"] = notes["orion_solving_sequence_average"]
+    metrics["orion_all_runs_sequence_average"] = notes["orion_all_runs_sequence_average"]
     metrics["sequence_length_labeled"] = notes["sequence_length_labeled"]
     metrics["cheat_rate"] = notes["cheat_rate"]
     metrics["cheat_labeled"] = notes["cheat_labeled"]
@@ -245,7 +247,7 @@ def _parse_token_amount(number: str, suffix: str | None) -> int:
     return int(value)
 
 
-# "400K sequence length" or "sequence length: 450,000". A bare token count does not match.
+# "300K sequence length" or "sequence length: 300,000". A bare token count does not match.
 _SEQUENCE_LENGTH_RE = re.compile(
     r"sequence[\s_-]*length(?:\s*(?:average|avg))?\s*[:=]?\s*([\d,]+(?:\.\d+)?)\s*([kK])?"
     r"|([\d,]+(?:\.\d+)?)\s*([kK])?\s+(?:tokens?\s+of\s+)?sequence[\s_-]*length",
@@ -272,6 +274,9 @@ _BLOCK_CLEAR_RE = re.compile(
     re.I,
 )
 _DIFF_FENCE_RE = re.compile(r"```diff\s*\n(.*?)```", re.S)
+_AVERAGE_WORD_RE = re.compile(r"\b(?:average|avg|mean)\b", re.I)
+# "Orion solving runs average", "Long Orion solves", "passing runs avg".
+_SOLVING_WORD_RE = re.compile(r"\b(?:solv(?:ing|ed|es)|passing)\b", re.I)
 _HINTED_RUN_RE = re.compile(r"\bhinted\b", re.I)
 _UNHINTED_WORD_RE = re.compile(r"\bunhinted\b", re.I)
 
@@ -297,10 +302,13 @@ def _annotate_rollouts(
     *,
     agent_types: tuple[str, ...] = AGENT_TYPES,
 ) -> dict[str, Any]:
-    """Hint exclusion, Nova sequence length, and rollout integrity flags.
+    """Hint exclusion, Orion solving-run sequence length, and rollout integrity flags.
 
     Sequence length counts only when the text labels it as sequence length.
-    A generic token total is ignored so it cannot feed the 400K bar.
+    A generic token total is ignored so it cannot feed the long-horizon bar.
+    The bar averages Orion's solving runs only: an explicit solving-run average
+    wins, else per-run lengths on unhinted Orion rows marked PASS are averaged.
+    An Orion average over all runs is kept for the summary but is not the bar.
     """
     # Patches are evidence for the false-pass check, not panel metadata. A
     # string added by an agent must not become a status, token count, or flag.
@@ -311,10 +319,14 @@ def _annotate_rollouts(
     hints_marked = False
     excluded: set[str] = set()
     unhinted_rows: dict[str, list[bool]] = {}
-    nova_lengths: list[int] = []
-    explicit_average: int | None = None
+    solver = OLYMPUS_REQUIRED_SOLVER
+    solver_re = re.compile(rf"\b{re.escape(solver)}\b", re.I)
+    solving_lengths: list[int] = []
+    explicit_solving_average: int | None = None
+    all_runs_average: int | None = None
     current: str | None = None
     current_run_hinted = False
+    current_run_passed: bool | None = None
 
     for line in (text or "").splitlines():
         stripped = line.strip()
@@ -330,16 +342,22 @@ def _annotate_rollouts(
             current = None
         if matches or _SINGLE_RUN_ROW_RE.search(stripped) or current is None:
             current_run_hinted = _is_hinted_segment(stripped)
+            # A summary such as "Orion: 1/4 pass" is not one run's outcome.
+            outcomes_here = [] if _summary_counts(stripped) else _status_tokens(stripped)
+            current_run_passed = outcomes_here[0] if outcomes_here else None
 
         length = _sequence_length_in(stripped)
         agent_for_length = agent_on_line or current
         if length is not None and not current_run_hinted and not _is_hinted_segment(stripped):
-            if re.search(r"\b(?:average|avg)\b", stripped, re.I) and (
-                agent_for_length == "Nova" or re.search(r"\bNova\b", stripped, re.I)
-            ):
-                explicit_average = length
-            elif agent_for_length == "Nova":
-                nova_lengths.append(length)
+            names_solver = agent_for_length == solver or solver_re.search(stripped) is not None
+            is_run_row = bool(_SINGLE_RUN_ROW_RE.search(stripped) or _status_tokens(stripped))
+            averaged = _AVERAGE_WORD_RE.search(stripped) is not None
+            if names_solver and _SOLVING_WORD_RE.search(stripped) and (averaged or not is_run_row):
+                explicit_solving_average = length
+            elif names_solver and averaged:
+                all_runs_average = length
+            elif agent_for_length == solver and current_run_passed:
+                solving_lengths.append(length)
 
         if not matches:
             if current and _is_hinted_segment(stripped):
@@ -403,12 +421,12 @@ def _annotate_rollouts(
             rows = unhinted_rows.get(name, [])
             override[name] = {"runs": len(rows), "passes": sum(rows)}
 
-    if explicit_average is not None:
-        nova_average: float | None = float(explicit_average)
-    elif nova_lengths:
-        nova_average = sum(nova_lengths) / len(nova_lengths)
+    if explicit_solving_average is not None:
+        solving_average: float | None = float(explicit_solving_average)
+    elif solving_lengths:
+        solving_average = sum(solving_lengths) / len(solving_lengths)
     else:
-        nova_average = None
+        solving_average = None
 
     cheat_rate: float | None = None
     cheat_labeled = _CHEAT_WORD_RE.search(text or "") is not None
@@ -486,8 +504,11 @@ def _annotate_rollouts(
     return {
         "hints_marked": hints_marked or bool(excluded),
         "per_agent": override,
-        "nova_sequence_average": nova_average,
-        "sequence_length_labeled": nova_average is not None,
+        "orion_solving_sequence_average": solving_average,
+        "orion_all_runs_sequence_average": (
+            float(all_runs_average) if all_runs_average is not None else None
+        ),
+        "sequence_length_labeled": solving_average is not None,
         "cheat_rate": cheat_rate,
         "cheat_labeled": cheat_labeled,
         "unfair_runs": unfair_runs,
@@ -504,6 +525,167 @@ def _rate_label(passes: int, runs: int) -> str:
     return f"{passes}/{runs} = {text}%"
 
 
+def _olympus_solve_findings(
+    per_agent: dict[str, dict[str, int]],
+    findings: list[Finding],
+    *,
+    agent_types: tuple[str, ...],
+    breakdown: str,
+    max_solve_rate: float,
+    required_solver: str,
+    never_solver: str,
+) -> list[str]:
+    """Olympus: the required solver solves rarely, the never-solver stays at 0%,
+    and every other model solves at most ``max_solve_rate`` of the time."""
+    issues: list[str] = []
+    cap = f"{max_solve_rate:.0%}"
+
+    def stats(name: str) -> tuple[int, int]:
+        entry = per_agent.get(name) or {}
+        return int(entry.get("passes", 0)), int(entry.get("runs", 0))
+
+    if not any(stats(name)[0] for name in agent_types):
+        findings.append(
+            Finding(
+                phase="5",
+                severity="MAJOR",
+                finding="No model solved the task",
+                evidence=f"0 unhinted passes ({breakdown})" if breakdown else "0 unhinted passes",
+                suggested_fix=(
+                    "Localise the ambiguous prompt sentence or unfair test that blocks "
+                    f"every model. {required_solver} must solve it in at least one run "
+                    f"and at most {cap} of runs."
+                ),
+            )
+        )
+        issues.append("no model solved the task")
+    else:
+        passes, runs = stats(required_solver)
+        if passes == 0:
+            findings.append(
+                Finding(
+                    phase="5",
+                    severity="MAJOR",
+                    finding=f"{required_solver} never solved the task",
+                    evidence=f"{required_solver} {passes}/{runs} unhinted passes ({breakdown})",
+                    suggested_fix=(
+                        f"{required_solver} must solve the task in at least one unhinted run "
+                        f"and at most {cap} of runs."
+                    ),
+                )
+            )
+            issues.append(f"{required_solver} 0/{runs}")
+
+    passes, runs = stats(never_solver)
+    if passes > 0:
+        findings.append(
+            Finding(
+                phase="5",
+                severity="MAJOR",
+                finding=f"{never_solver} solved the task",
+                evidence=(
+                    f"{never_solver} {_rate_label(passes, runs)} "
+                    f"(must stay at 0% over at least {MIN_UNHINTED_RUNS} runs)"
+                ),
+                suggested_fix=(
+                    f"Make the task harder until {never_solver} solves none of its "
+                    "unhinted runs."
+                ),
+            )
+        )
+        issues.append(f"{never_solver} {_rate_label(passes, runs)}")
+
+    for name in agent_types:
+        if name == never_solver:
+            continue
+        passes, runs = stats(name)
+        if runs and passes / runs > max_solve_rate:
+            findings.append(
+                Finding(
+                    phase="5",
+                    severity="MAJOR",
+                    finding=f"{name} solve rate above {cap}",
+                    evidence=f"{name} {_rate_label(passes, runs)} (maximum {cap})",
+                    suggested_fix=(
+                        f"Make the task harder so {name} succeeds on at most {cap} "
+                        "of its unhinted runs."
+                    ),
+                )
+            )
+            issues.append(f"{name} {_rate_label(passes, runs)}")
+    return issues
+
+
+def _one_model_solve_findings(
+    per_agent: dict[str, dict[str, int]],
+    findings: list[Finding],
+    *,
+    agent_types: tuple[str, ...],
+    agents_label: str,
+    breakdown: str,
+    max_solve_rate: float,
+) -> list[str]:
+    """Mars: exactly one model solves, above 0% and at most ``max_solve_rate``."""
+    issues: list[str] = []
+    solvers: list[tuple[str, float, int, int]] = []
+    for name in agent_types:
+        stats = per_agent.get(name) or {}
+        runs = int(stats.get("runs", 0))
+        passes = int(stats.get("passes", 0))
+        if runs and passes > 0:
+            solvers.append((name, passes / runs, passes, runs))
+
+    if not solvers:
+        findings.append(
+            Finding(
+                phase="5",
+                severity="MAJOR",
+                finding="No model solved the task",
+                evidence=f"0 unhinted passes ({breakdown})" if breakdown else "0 unhinted passes",
+                suggested_fix=(
+                    "Localise the ambiguous prompt sentence or unfair test that blocks "
+                    "every model. Exactly one model should solve it, at 25% or below."
+                ),
+            )
+        )
+        issues.append("no model solved the task")
+    elif len(solvers) > 1:
+        names = " and ".join(item[0] for item in solvers)
+        findings.append(
+            Finding(
+                phase="5",
+                severity="MAJOR",
+                finding="More than one model solved the task",
+                evidence=f"{names} both have unhinted passes ({breakdown})",
+                suggested_fix=(
+                    "Tighten the task until only one of "
+                    f"{agents_label} solves it, and the other two stay at 0%."
+                ),
+            )
+        )
+        issues.append(f"solvers {names}")
+    else:
+        name, rate, passes, runs = solvers[0]
+        if rate > max_solve_rate:
+            findings.append(
+                Finding(
+                    phase="5",
+                    severity="MAJOR",
+                    finding="Solve rate above 25%",
+                    evidence=(
+                        f"{name} {_rate_label(passes, runs)} "
+                        f"(maximum {max_solve_rate:.0%}; others at 0%)"
+                    ),
+                    suggested_fix=(
+                        "Make the task harder so the solving model succeeds on at most "
+                        "25% of its unhinted runs."
+                    ),
+                )
+            )
+            issues.append(f"{name} {_rate_label(passes, runs)}")
+    return issues
+
+
 def evaluate_agent_runs_phase5(
     agent_runs_data: dict[str, Any],
     *,
@@ -511,17 +693,22 @@ def evaluate_agent_runs_phase5(
     agent_types: tuple[str, ...] = AGENT_TYPES,
     min_unhinted_runs: int = MIN_UNHINTED_RUNS,
     max_solve_rate: float = MAX_SOLVE_RATE,
-    nova_min_sequence_tokens: int = NOVA_MIN_AVG_SEQUENCE_TOKENS,
-    nova_payout_sequence_cap: int = NOVA_PAYOUT_SEQUENCE_CAP,
+    orion_min_sequence_tokens: int = ORION_MIN_SOLVING_SEQUENCE_TOKENS,
     mars_min_median_loc: int = MARS_MIN_MEDIAN_LOC,
     max_cheat_rate: float = MAX_CHEAT_RATE,
-    nova_agent: str = "Nova",
+    required_solver: str = OLYMPUS_REQUIRED_SOLVER,
+    never_solver: str = OLYMPUS_NEVER_SOLVER,
 ) -> tuple[PhaseResult, list[Finding]]:
-    """Check unhinted coverage, the one-model solve rate, and Nova sequence length.
+    """Check unhinted coverage, per-model solve rates, and the long-horizon bar.
+
+    Olympus: Orion solves in at least one run and at most 25% of runs, Vega in
+    at most 25%, Nova never; Orion's solving runs average at least 256K tokens
+    of sequence length. Mars keeps the one-model bar and the median LOC floor.
 
     Returns SKIP when the panel is missing, unreadable, or only an aggregate
     total. An unreadable panel never produces a deterministic PASS. Olympus
-    also SKIPs when the solve bar is met but Nova sequence length is not labeled.
+    also SKIPs when the solve bar is met but Orion's solving-run sequence
+    length is not labeled.
     """
     if not agent_runs_data.get("available"):
         return (
@@ -538,8 +725,10 @@ def evaluate_agent_runs_phase5(
     if metrics.get("median_loc") is None and stored.get("median_loc") is not None:
         metrics["median_loc"] = stored["median_loc"]
     if not metrics.get("sequence_length_labeled") and stored.get("sequence_length_labeled"):
-        metrics["nova_sequence_average"] = stored.get("nova_sequence_average")
-        metrics["sequence_length_labeled"] = True
+        metrics["orion_solving_sequence_average"] = stored.get("orion_solving_sequence_average")
+        metrics["sequence_length_labeled"] = (
+            metrics["orion_solving_sequence_average"] is not None
+        )
 
     findings: list[Finding] = []
     issues: list[str] = []
@@ -608,109 +797,57 @@ def evaluate_agent_runs_phase5(
             for name in incomplete
         ))
 
-    solvers: list[tuple[str, float, int, int]] = []
-    for name in agent_types:
-        stats = per_agent.get(name) or {}
-        runs = int(stats.get("runs", 0))
-        passes = int(stats.get("passes", 0))
-        if runs and passes > 0:
-            solvers.append((name, passes / runs, passes, runs))
-
-    if len(solvers) == 0:
-        findings.append(
-            Finding(
-                phase="5",
-                severity="MAJOR",
-                finding="No model solved the task",
-                evidence=(
-                    f"0 unhinted passes ({breakdown})"
-                    if breakdown
-                    else "0 unhinted passes"
-                ),
-                suggested_fix=(
-                    "Localise the ambiguous prompt sentence or unfair test that blocks "
-                    "every model. Exactly one model should solve it, at 25% or below."
-                ),
+    if quest == "olympus":
+        issues.extend(
+            _olympus_solve_findings(
+                per_agent,
+                findings,
+                agent_types=agent_types,
+                breakdown=breakdown,
+                max_solve_rate=max_solve_rate,
+                required_solver=required_solver,
+                never_solver=never_solver,
             )
         )
-        issues.append("no model solved the task")
-    elif len(solvers) > 1:
-        names = " and ".join(item[0] for item in solvers)
-        findings.append(
-            Finding(
-                phase="5",
-                severity="MAJOR",
-                finding="More than one model solved the task",
-                evidence=f"{names} both have unhinted passes ({breakdown})",
-                suggested_fix=(
-                    "Tighten the task until only one of "
-                    f"{agents_label} solves it, and the other two stay at 0%."
-                ),
-            )
-        )
-        issues.append(f"solvers {names}")
     else:
-        name, rate, passes, runs = solvers[0]
-        if rate > max_solve_rate:
-            findings.append(
-                Finding(
-                    phase="5",
-                    severity="MAJOR",
-                    finding="Solve rate above 25%",
-                    evidence=(
-                        f"{name} {_rate_label(passes, runs)} "
-                        f"(maximum {max_solve_rate:.0%}; others at 0%)"
-                    ),
-                    suggested_fix=(
-                        "Make the task harder so the solving model succeeds on at most "
-                        "25% of its unhinted runs."
-                    ),
-                )
+        issues.extend(
+            _one_model_solve_findings(
+                per_agent,
+                findings,
+                agent_types=agent_types,
+                agents_label=agents_label,
+                breakdown=breakdown,
+                max_solve_rate=max_solve_rate,
             )
-            issues.append(f"{name} {_rate_label(passes, runs)}")
-        elif quest == "olympus" and name.lower() == nova_agent.lower():
-            findings.append(
-                Finding(
-                    phase="5",
-                    severity="MINOR",
-                    finding="Nova-only solve needs confirmation",
-                    evidence=(
-                        f"{name} {_rate_label(passes, runs)}; Vega and Orion are at 0%. "
-                        "The criteria panel allows any one model, but The Process says an "
-                        "unhinted Nova solve means the task is too easy."
-                    ),
-                    suggested_fix=(
-                        "Treat this as a warning until Shipd confirms whether a Nova-only "
-                        "solve passes. Do not describe it as a clear pass."
-                    ),
-                )
-            )
+        )
 
     long_horizon_unverified = False
-    sequence_average = metrics.get("nova_sequence_average")
-    if quest == "olympus":
+    sequence_average = metrics.get("orion_solving_sequence_average")
+    solver_passes = int((per_agent.get(required_solver) or {}).get("passes", 0))
+    if quest == "olympus" and solver_passes > 0:
+        # The bar averages Orion's solving runs, so it only applies once Orion solves.
         if not metrics.get("sequence_length_labeled") or sequence_average is None:
             long_horizon_unverified = True
-        elif float(sequence_average) <= nova_min_sequence_tokens:
+        elif float(sequence_average) < orion_min_sequence_tokens:
             findings.append(
                 Finding(
                     phase="5",
                     severity="MAJOR",
-                    finding="Nova sequence length below the long-horizon bar",
+                    finding=f"{required_solver} solving-run sequence length below the long-horizon bar",
                     evidence=(
-                        f"Nova average sequence length {float(sequence_average):,.0f} "
-                        f"is not above {nova_min_sequence_tokens:,}"
+                        f"{required_solver} solving runs average {float(sequence_average):,.0f} "
+                        f"tokens of sequence length (need at least {orion_min_sequence_tokens:,})"
                     ),
                     suggested_fix=(
-                        "Widen the task so Nova's average sequence length "
-                        f"(prompt, output, and compacted tokens) is above "
-                        f"{nova_min_sequence_tokens:,}."
+                        f"Widen the task so {required_solver}'s solving runs average at least "
+                        f"{orion_min_sequence_tokens:,} tokens of sequence length "
+                        "(prompt, output, and compacted tokens)."
                     ),
                 )
             )
             issues.append(
-                f"Nova sequence length {float(sequence_average):,.0f} "
-                f"<= {nova_min_sequence_tokens:,}"
+                f"{required_solver} solving sequence length {float(sequence_average):,.0f} "
+                f"< {orion_min_sequence_tokens:,}"
             )
     elif quest == "mars":
         median_loc = metrics.get("median_loc")
@@ -791,12 +928,11 @@ def evaluate_agent_runs_phase5(
             quest == "olympus"
             and metrics.get("sequence_length_labeled")
             and sequence_average is not None
-            and float(sequence_average) > nova_min_sequence_tokens
+            and float(sequence_average) >= orion_min_sequence_tokens
         ):
-            average = float(sequence_average)
             parts.append(
-                f"Nova average sequence length {average:,.0f} "
-                f"(scope share rises through {nova_payout_sequence_cap:,.0f})."
+                f"{required_solver} solving runs average {float(sequence_average):,.0f} "
+                "tokens of sequence length."
             )
         return " ".join(parts)
 
@@ -813,8 +949,15 @@ def evaluate_agent_runs_phase5(
         summary = (
             "Solve bar met"
             + (f" ({breakdown})" if breakdown else "")
-            + ". Long horizon unverified: Nova sequence length was not labeled on the panel."
+            + f". Long horizon unverified: {required_solver}'s solving-run sequence length "
+            "was not labeled on the panel."
         )
+        all_runs_average = metrics.get("orion_all_runs_sequence_average")
+        if all_runs_average is not None:
+            summary += (
+                f" The panel shows a {required_solver} average of {float(all_runs_average):,.0f} "
+                "over all runs, which is not the solving-run average."
+            )
         extra = _notes()
         if extra:
             summary = f"{summary} {extra}"

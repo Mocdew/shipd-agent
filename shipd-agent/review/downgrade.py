@@ -113,7 +113,7 @@ def evaluate_loc_phase4(
             status="PASS",
             summary=(
                 f"Effective LOC {effective_loc}. Olympus has no solution-LOC floor; "
-                "long horizon is Nova sequence length."
+                "long horizon is Orion's solving-run sequence length."
             ),
         ),
         findings,

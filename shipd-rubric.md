@@ -166,9 +166,9 @@ Review from the **problem description alone** — not reverse-engineered from te
 When agent run data is available (pass/fail, diffs, failure reasons, sequence length):
 
 - **Required runs:** **Nova, Vega, and Orion** each need **at least 4 finished unhinted runs**. More than 4 is allowed. Hinted runs never count.
-- **Pass bar:** exactly **one** model solves the task, at a rate **above 0% and at most 25%**. The other two stay at 0%. Zero solvers → unsolvable or unfair. Two solvers, or one solver above 25%, → too easy.
-- **Nova-only solve:** warning, not a failure, until Shipd settles a docs conflict. The criteria panel allows any one model; The Process says an unhinted Nova solve is too easy.
-- **Olympus long horizon:** Nova's average **sequence length above 400,000 tokens** (the run's largest request plus tokens the harness compacted or trimmed). A generic token count is not this metric. Averages above 400,000 raise the scope share of the reward through 500,000. That cap is not a second fail line.
+- **Olympus pass bar:** **Orion** solves the task in **at least one** run and **at most 25%** of runs. **Vega** solves it in **at most 25%** of runs. **Nova** stays at **0%** over at least 4 runs. Orion and Vega may both solve it. Zero solvers → unsolvable or unfair. Orion at 0%, any Nova solve, or Orion or Vega above 25% → fails the bar.
+- **Mars pass bar:** exactly **one** model solves the task, at a rate **above 0% and at most 25%**. The other two stay at 0%.
+- **Olympus long horizon:** Orion's **solving runs** average **at least 256,000 tokens of sequence length** (the run's largest request plus tokens the harness compacted or trimmed). An Orion average over all runs, or a generic token count, is not this metric.
 - **Mars:** median successful runs ≥ **100** LOC. Olympus does not use file, message, or LOC medians.
 - **Integrity, when the page shows it:** cheat rate below 20%; no run flagged unfair or broken; no run blocked by the environment or verifier. A missing flag is unverified, not a pass.
 - **False positives:** a passing run whose patch is on the page must really solve the task. One false pass fails. No patch on the page is a skip, not a pass.
@@ -206,7 +206,7 @@ Shipd's Auto Review is the last stage. It reviews the task, tests, solution, and
 ### Olympus
 
 - Set `repo_eligible` and `solvability_ok` (boolean).
-- Long horizon: Nova average sequence length **above 400,000** tokens. Nova, Vega, and Orion each have **at least 4** unhinted runs. One model only, above 0% and at most 25%. No solution-LOC floor.
+- Long horizon: Orion's solving runs average **at least 256,000** tokens of sequence length. Nova, Vega, and Orion each have **at least 4** unhinted runs. Orion solves in at least one run and at most 25%; Vega at most 25%; Nova never. No solution-LOC floor.
 - Ineligible repo or solvability concerns → usually **`request_changes`**, not `reject`, unless wrong repo entirely.
 
 ### Mars

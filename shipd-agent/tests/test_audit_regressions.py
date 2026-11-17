@@ -70,20 +70,21 @@ Run 4: FAIL
 Run 5: FAIL
 Nova: 0/4 pass
 Orion: 0/4 pass
-Nova average sequence length: 450000
 """)
     assert metrics["per_agent"]["Vega"] == {"runs": 4, "passes": 0}
     assert metrics["hints_marked"]
 
 
-def test_hinted_run_continuation_does_not_inflate_nova_sequence_length():
-    metrics = parse_agent_run_metrics("""Nova
-Run 1: FAIL hinted
+def test_hinted_run_continuation_does_not_inflate_orion_sequence_length():
+    metrics = parse_agent_run_metrics("""Orion
+Run 1: PASS hinted
 Sequence length: 900000
-Run 2: FAIL unhinted
+Run 2: PASS unhinted
 Sequence length: 300000
+Run 3: FAIL
+Sequence length: 100000
 """)
-    assert metrics["nova_sequence_average"] == 300000
+    assert metrics["orion_solving_sequence_average"] == 300000
 
 
 def test_hinted_runs_are_excluded_from_the_overall_pass_rate():
@@ -103,8 +104,8 @@ Orion: 0/4 pass
 
 
 def test_sequence_length_on_hinted_summary_is_not_used():
-    metrics = parse_agent_run_metrics("Nova hinted average sequence length: 900000")
-    assert metrics["nova_sequence_average"] is None
+    metrics = parse_agent_run_metrics("Orion hinted solving runs average sequence length: 900000")
+    assert metrics["orion_solving_sequence_average"] is None
 
 
 def test_patch_contents_are_not_agent_run_metadata():

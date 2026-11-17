@@ -276,7 +276,7 @@ def format_loc_analysis(
     del olympus_min  # Olympus no longer publishes a solution-LOC floor.
     if quest == "olympus":
         threshold_note = (
-            " Olympus has no solution-LOC floor; long horizon is Nova sequence length. "
+            " Olympus has no solution-LOC floor; long horizon is Orion's solving-run sequence length. "
             f"Mars size limits ({mars_min}–{mars_max}) are not applied."
         )
     else:

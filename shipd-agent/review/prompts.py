@@ -16,9 +16,8 @@ from review.rubric_defaults import (
     MAX_PROMPT_REQUIREMENTS,
     MAX_PROMPT_WORDS,
     MAX_CHEAT_RATE,
-    NOVA_MIN_AVG_SEQUENCE_TOKENS,
     OLYMPUS_MIN_EFFECTIVE_LOC,
-    NOVA_PAYOUT_SEQUENCE_CAP,
+    ORION_MIN_SOLVING_SEQUENCE_TOKENS,
     PHASE0_PASS_CRITERIA,
     PROMPT_THRESHOLDS_PROMPT,
     RUNS_PER_AGENT_TYPE,
@@ -40,7 +39,7 @@ Work through rubric phases **in order** (0 through 6):
 | 2 | Dockerfile & test.sh harness (minimal Dockerfile, base/new split) |
 | 3 | Test quality (coverage, determinism, behaviour not implementation, no network) |
 | 4 | Solution & code quality (requirements, repo patterns, LOC discipline — approve min band {APPROVE_MIN_BAND_SCORE}; Olympus has no LOC floor) |
-| 5 | Agent runs & solvability ({_AGENT_TYPES_TEXT} need at least {RUNS_PER_AGENT_TYPE} finished unhinted runs each; one model only, above 0% and at most 25%; Olympus long horizon is Nova average sequence length above {NOVA_MIN_AVG_SEQUENCE_TOKENS:,} tokens; SKIP if the panel is missing) |
+| 5 | Agent runs & solvability ({_AGENT_TYPES_TEXT} need at least {RUNS_PER_AGENT_TYPE} finished unhinted runs each; Olympus: Orion solves in at least one run and at most 25%, Vega at most 25%, Nova never, and Orion's solving runs average at least {ORION_MIN_SOLVING_SEQUENCE_TOKENS:,} tokens of sequence length; Mars: one model only, above 0% and at most 25%; SKIP if the panel is missing) |
 | 6 | Holistic / platform (related submissions, Holistic AI Check fairness notes, Mars vs Olympus fit, eligibility) |
 
 Band scores (0–3): {_BAND_SCORE_GUIDE}
@@ -141,8 +140,7 @@ def build_unified_review_user_prompt(
     agent_thresholds = AGENT_RUN_THRESHOLDS_PROMPT.format(
         agent_types=_AGENT_TYPES_TEXT,
         runs_per_agent=RUNS_PER_AGENT_TYPE,
-        nova_min_sequence=f"{NOVA_MIN_AVG_SEQUENCE_TOKENS:,}",
-        nova_payout_cap=f"{NOVA_PAYOUT_SEQUENCE_CAP:,}",
+        orion_min_sequence=f"{ORION_MIN_SOLVING_SEQUENCE_TOKENS:,}",
         mars_median_loc=MARS_MIN_MEDIAN_LOC,
         max_cheat_pct=MAX_CHEAT_RATE * 100,
     )
@@ -234,10 +232,12 @@ FINALIZE_PHASE_INSTRUCTIONS = f"""
 **Agent runs (Phase 5 — platform bars):**
 - {_AGENT_TYPES_TEXT} need at least {RUNS_PER_AGENT_TYPE} finished unhinted runs each.
   More than {RUNS_PER_AGENT_TYPE} is allowed. Hinted runs never count.
-- Exactly one model solves the task, at a rate above 0% and at most 25%. The other two stay at 0%.
-- A Nova-only solve is a warning, not a failure, until Shipd settles a docs conflict.
-- Olympus long horizon: Nova average sequence length above {NOVA_MIN_AVG_SEQUENCE_TOKENS:,} tokens.
-- Mars: median successful runs ≥ {MARS_MIN_MEDIAN_LOC} LOC.
+- Olympus: Orion solves the task in at least one run and at most 25% of runs. Vega solves
+  it in at most 25% of runs. Nova stays at 0%. Orion and Vega may both solve it.
+- Olympus long horizon: Orion's solving runs average at least {ORION_MIN_SOLVING_SEQUENCE_TOKENS:,}
+  tokens of sequence length. An Orion average over all runs is not this figure.
+- Mars: exactly one model solves the task, above 0% and at most 25%; the other two stay at 0%.
+  Median successful runs ≥ {MARS_MIN_MEDIAN_LOC} LOC.
 - Missing per-agent counts or an unlabeled sequence length are not a pass.
 - Deterministic phase 5 checks run when agent run data is scraped. Do not reverse a FAIL.
   A SKIP means the bar was not on the page; do not turn it into a PASS.

@@ -82,17 +82,17 @@ class AgentRunsParserTests(unittest.TestCase):
     def test_rollouts_heading_is_accepted(self) -> None:
         text = """
 Rollouts
-Vega: 1/4 pass
+Orion: 1/4 pass
+Vega: 0/4 pass
 Nova: 0/4 pass
-Orion: 0/4 pass
-Nova average sequence length: 450000
+Orion solving runs average sequence length: 300000
 Submission criteria
 Auto Review
 False positive
 """.strip()
         result = parse_agent_runs_from_text(text)
         self.assertTrue(result["available"])
-        self.assertIn("Vega: 1/4 pass", result["summary"])
+        self.assertIn("Orion: 1/4 pass", result["summary"])
         self.assertNotIn("Rollouts", result["summary"])
         self.assertIn("sequence length", result["raw_text"])
 

@@ -1,7 +1,7 @@
 # End-to-end tests for the 2026-10 assessment criteria through the review graph:
 # the task prompt bars (1,000 words, Too Many Requirements) and the agent run
-# bar (at least 4 unhinted runs per model, one model at 25% or below,
-# Nova sequence length above 400K on Olympus).
+# bar (at least 4 unhinted runs per model; Orion solving 1..25%, Vega <= 25%, Nova never;
+# Orion's solving runs averaging at least 256K sequence length on Olympus).
 #
 # The finalize LLM (make_chat_model) is faked — no API calls; it approves everything, so any
 # FAIL/request_changes in the output comes from the deterministic checks. The
@@ -43,9 +43,9 @@ SPRAWLING_PROMPT = (
     + " ".join(["context"] * 1000)
 )
 
-ONE_PASS_ROWS = ("Vega: 1/4 pass", "Nova: 0/4 pass", "Orion: 0/4 pass")
-TWO_PASS_ROWS = ("Nova: 1/4 pass", "Vega: 1/4 pass", "Orion: 0/4 pass")
-NOVA_SEQUENCE_LINE = "Nova average sequence length: 450000"
+ONE_PASS_ROWS = ("Orion: 1/4 pass", "Vega: 0/4 pass", "Nova: 0/4 pass")
+NOVA_SOLVES_ROWS = ("Orion: 1/4 pass", "Nova: 1/4 pass", "Vega: 0/4 pass")
+ORION_SEQUENCE_LINE = "Orion solving runs average sequence length: 300000"
 
 
 def _approving_review() -> ReviewResult:
@@ -105,7 +105,7 @@ class Phase0KeepsScrapeFindingsTests(_RepoCase):
     def test_agent_run_findings_survive_phase0(self) -> None:
         # Regression: Phase 0 used to overwrite state["findings"], dropping the
         # agent run findings recorded at scrape time.
-        panel = "Agent Runs\n" + "\n".join(TWO_PASS_ROWS)
+        panel = "Agent Runs\n" + "\n".join(NOVA_SOLVES_ROWS)
         state = {
             "quest": "olympus",
             "agent_runs_data": parse_agent_runs_from_text(panel),
@@ -117,7 +117,7 @@ class Phase0KeepsScrapeFindingsTests(_RepoCase):
             {"repo_path": str(self.repo), "config": _config(), "submission_summary": {}}
         )
         out = g._run_phase0_into_state(state)
-        self.assertIn("More than one model solved the task", _finding_names(out, "5"))
+        self.assertIn("Nova solved the task", _finding_names(out, "5"))
         self.assertEqual(out["phase_results"]["5"]["status"], "FAIL")
 
     def test_unreadable_agent_panel_leaves_phase5_to_reviewer(self) -> None:
@@ -135,7 +135,7 @@ class FinalizeAndValidateTests(_RepoCase):
         self.write_prompt(prompt)
         config = _config()
         panel = "Agent Runs\n12/12 agent runs complete.\n" + "\n".join(agent_rows)
-        panel += "\nMedian files: 5, messages: 146.5, LOC: 420\n" + NOVA_SEQUENCE_LINE
+        panel += "\nMedian files: 5, messages: 146.5, LOC: 420\n" + ORION_SEQUENCE_LINE
         state: dict = {
             "repo_path": str(self.repo),
             "quest": "olympus",
@@ -156,7 +156,7 @@ class FinalizeAndValidateTests(_RepoCase):
         return g.validate_node(state)["review_result"], chat
 
     def test_new_criteria_override_an_approving_reviewer(self) -> None:
-        result, _ = self._run(prompt=SPRAWLING_PROMPT, agent_rows=TWO_PASS_ROWS)
+        result, _ = self._run(prompt=SPRAWLING_PROMPT, agent_rows=NOVA_SOLVES_ROWS)
 
         self.assertEqual(result["decision"], "request_changes")
         self.assertEqual(result["phase_results"]["1"]["status"], "FAIL")
@@ -170,7 +170,7 @@ class FinalizeAndValidateTests(_RepoCase):
                 "Too many independent requirements in task prompt",
             ],
         )
-        self.assertEqual(_finding_names(result, "5"), ["More than one model solved the task"])
+        self.assertEqual(_finding_names(result, "5"), ["Nova solved the task"])
         self.assertEqual(result["band_ratings"]["problem"]["score"], 1)
 
     def test_compliant_submission_stays_approved(self) -> None:
@@ -246,7 +246,7 @@ def _review_page_html(*, agent_rows: tuple[str, ...], requirements_check: str) -
 <section><h2>Agent Runs</h2>
   <div>12/12 agent runs complete.</div>{rows}
   <div>Median files: 5, messages: 146.5, LOC: 420</div>
-  <div>Nova average sequence length: 450000</div>
+  <div>Orion solving runs average sequence length: 300000</div>
 </section>
 <section><h2>Related Submissions</h2><div>No related submissions.</div></section>
 </main></body></html>"""
@@ -295,7 +295,7 @@ class ReviewGraphOnScrapedPageTests(_RepoCase):
         result = self._review(
             config=_config(review_dry_run=True),
             prompt=SPRAWLING_PROMPT,
-            agent_rows=TWO_PASS_ROWS,
+            agent_rows=NOVA_SOLVES_ROWS,
             check="FAIL",
         )
         self.assertEqual(result["phase_results"]["1"]["status"], "FAIL")
@@ -304,7 +304,7 @@ class ReviewGraphOnScrapedPageTests(_RepoCase):
             _finding_names(result, "1")[:2],
             ["Task prompt exceeds the 1,000-word limit", "Shipd flagged Too Many Requirements"],
         )
-        self.assertEqual(_finding_names(result, "5"), ["More than one model solved the task"])
+        self.assertEqual(_finding_names(result, "5"), ["Nova solved the task"])
 
     def test_dry_run_passes_a_compliant_submission(self) -> None:
         result = self._review(
@@ -322,14 +322,14 @@ class ReviewGraphOnScrapedPageTests(_RepoCase):
         result = self._review(
             config=_config(),
             prompt=SPRAWLING_PROMPT,
-            agent_rows=TWO_PASS_ROWS,
+            agent_rows=NOVA_SOLVES_ROWS,
             check="FAIL",
         )
         self.assertTrue(result.get("review_complete"))
         self.assertEqual(result["decision"], "request_changes")
         self.assertEqual(result["phase_results"]["1"]["status"], "FAIL")
         self.assertEqual(result["phase_results"]["5"]["status"], "FAIL")
-        self.assertIn("More than one model solved the task", _finding_names(result, "5"))
+        self.assertIn("Nova solved the task", _finding_names(result, "5"))
         self.assertIn("Shipd flagged Too Many Requirements", _finding_names(result, "1"))
         self.assertEqual(result["band_ratings"]["problem"]["score"], 1)
 

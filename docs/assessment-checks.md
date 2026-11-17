@@ -19,22 +19,30 @@ Configure `REVIEW_MAX_PROMPT_WORDS` and `REVIEW_MAX_PROMPT_REQUIREMENTS` in `.en
 
 ## Agent run matrix
 
-Each of Nova, Vega, and Orion needs at least four finished unhinted runs. More than four is allowed. Hinted runs never count. Exactly one model solves the task, at a rate above 0% and at most 25%. The other two stay at 0%.
+Each of Nova, Vega, and Orion needs at least four finished unhinted runs. More than four is allowed. Hinted runs never count.
 
-Olympus long horizon is Nova's average sequence length above 400,000 tokens. The page must label that figure as sequence length. A generic token count does not count. Averages above 400,000 raise the scope share of the reward through 500,000; that cap is reported, not a second failure. Olympus has no solution-LOC floor and no file or message median. Mars still requires a median of at least 100 LOC when that figure is shown.
+On Olympus, the models have separate bars:
 
-A Nova-only solve that otherwise meets the bar is a **warning**, not a failure, until Shipd settles a disagreement between the criteria panel and The Process.
+- **Orion** solves the task in at least one run and at most 25% of runs.
+- **Vega** solves it in at most 25% of runs. Zero is fine.
+- **Nova** never solves it.
+
+Orion and Vega may both solve it. Mars keeps the older bar: exactly one model solves the task, above 0% and at most 25%, and the other two stay at 0%.
+
+Olympus long horizon is the average sequence length of **Orion's solving runs**, which must be at least 256,000 tokens. The page must label the figure as sequence length; a generic token count does not count. The checker uses an explicit solving-run average ("Orion solving runs average sequence length", "Long Orion solves: 300K sequence length"), or else averages the lengths on unhinted Orion runs marked PASS. An Orion average over all runs is not the bar. Olympus has no solution-LOC floor and no file or message median. Mars still requires a median of at least 100 LOC when that figure is shown.
 
 | Example | Vega | Nova | Orion | Verdict |
 | --- | --- | --- | --- | --- |
-| One model at 25%, Nova above 400K | 1/4 | 0/4 | 0/4 | Pass |
-| 2 of 8 is still 25% | 2/8 | 0/4 | 0/4 | Pass |
-| 1 of 5 is 20% | 1/5 | 0/4 | 0/4 | Pass |
-| 2 of 4 is 50% | 2/4 | 0/4 | 0/4 | Fail |
-| Two models solve it | 1/4 | 1/4 | 0/4 | Fail |
-| Nova average 300K | 1/4 | 0/4 | 0/4 | Fail |
-| Nova is the only solver | 0/4 | 1/4 | 0/4 | Pass, with a warning |
-| Fewer than 4 unhinted runs | 1/4 | 0/3 | 0/4 | Fail |
+| Orion at 25%, solving runs average 300K | 0/4 | 0/4 | 1/4 | Pass |
+| Orion and Vega both solve | 1/4 | 0/4 | 1/4 | Pass |
+| 2 of 8 is still 25% | 0/4 | 0/4 | 2/8 | Pass |
+| Exactly 256K | 0/4 | 0/4 | 1/4 | Pass |
+| Orion solving runs average 200K | 0/4 | 0/4 | 1/4 | Fail |
+| Only Vega solves | 1/4 | 0/4 | 0/4 | Fail |
+| Nova solves | 0/4 | 1/4 | 1/4 | Fail |
+| Orion at 50% | 0/4 | 0/4 | 2/4 | Fail |
+| Vega at 50% | 2/4 | 0/4 | 1/4 | Fail |
+| Fewer than 4 unhinted runs | 0/4 | 0/3 | 1/4 | Fail |
 
 Fractions mean **passing runs / unhinted runs**. The reviewer reads existing results. It does not schedule these evaluations or click run/re-run controls.
 
@@ -53,7 +61,7 @@ The agent line-up (Vega, Orion, Nova) is a guess, because Shipd does not publish
 
 ## Evidence limits
 
-An unavailable or unreadable Agent Runs panel returns **SKIP**. An aggregate-only line such as `1/12 pass` also returns **SKIP**. It cannot show per-agent unhinted counts or the Nova average, so it is not a pass. When the solve bar is met but sequence length is not labeled, Olympus returns **SKIP** for that missing bar. Cheat rate, fair-task flags, and environment blockers are each skipped when the page does not show them; the summary says so instead of calling them passed.
+An unavailable or unreadable Agent Runs panel returns **SKIP**. An aggregate-only line such as `1/12 pass` also returns **SKIP**. It cannot show per-agent unhinted counts or Orion's solving-run average, so it is not a pass. When the solve bar is met but Orion's solving-run sequence length is not labeled, Olympus returns **SKIP** for that missing bar. Cheat rate, fair-task flags, and environment blockers are each skipped when the page does not show them; the summary says so instead of calling them passed.
 
 ## Updating the rules
 
