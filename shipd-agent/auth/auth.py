@@ -183,6 +183,17 @@ def wait_for_reviews(page: Page, timeout_ms: int = 30_000) -> None:
     page.wait_for_url("**/reviews**", timeout=timeout_ms, wait_until="commit")
 
 
+def wait_for_signed_in(page: Page, timeout_ms: int = 30_000) -> None:
+    """Wait until Shipd navigates away from the sign-in page.
+
+    Shipd honours the sign-in page's ``redirect`` parameter, so a successful
+    sign-in can land on time-logs (or another quest page), not only /reviews.
+    """
+    page.wait_for_url(
+        lambda url: "sign-in" not in url, timeout=timeout_ms, wait_until="commit"
+    )
+
+
 def _decode_header_value(value: str) -> str:
     parts: list[str] = []
     for chunk, encoding in decode_header(value):
@@ -348,7 +359,7 @@ def sign_in_with_email_otp(
             print("Complete email sign-in in the browser window...")
             if "sign-in" not in page.url:
                 goto_page(page, SIGN_IN_URL)
-            wait_for_reviews(page, timeout_ms=MANUAL_LOGIN_TIMEOUT_MS)
+            wait_for_signed_in(page, timeout_ms=MANUAL_LOGIN_TIMEOUT_MS)
             return
         raise RuntimeError(
             "No saved session and AUTH_EMAIL is not set. Add AUTH_EMAIL to .env "
@@ -365,7 +376,7 @@ def sign_in_with_email_otp(
                 "Verification code input is ready. Enter the code from your inbox "
                 "in the browser window..."
             )
-            wait_for_reviews(page, timeout_ms=MANUAL_LOGIN_TIMEOUT_MS)
+            wait_for_signed_in(page, timeout_ms=MANUAL_LOGIN_TIMEOUT_MS)
             return
         raise RuntimeError(
             "AUTH_PASSWORD is required for headless login (IMAP app password). "
@@ -390,10 +401,10 @@ def sign_in_with_email_otp(
 
     timeout_ms = MANUAL_LOGIN_TIMEOUT_MS if headed else 60_000
     try:
-        wait_for_reviews(page, timeout_ms=timeout_ms)
+        wait_for_signed_in(page, timeout_ms=timeout_ms)
     except PlaywrightTimeoutError as exc:
         raise RuntimeError(
-            "Sign-in did not reach /reviews after entering the verification code. "
+            "Sign-in did not leave the sign-in page after entering the verification code. "
             "The code may have expired; try again."
         ) from exc
 
